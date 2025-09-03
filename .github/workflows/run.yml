@@ -1,15 +1,22 @@
 name: Run My Scraper
 
+# 🚀 Simple ON/OFF Switch for Workflow  
+# ✅ Set ENABLE_WORKFLOW: "on" to run  
+# ❌ Set ENABLE_WORKFLOW: "off" to stop  
+env:
+  ENABLE_WORKFLOW: "off"   # 🔴 Switch here (on/off)
+
 on:
   schedule:
-    # Runs every 20 minutes, between 9 AM and 9 PM (GMT+6)
+    # ⏰ Runs every 20 minutes, between 9 AM and 9 PM (GMT+6)
     - cron: '*/20 3-15 * * *'
       
-  # Allows you to run this workflow manually from the Actions tab
+  # ▶️ Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 jobs:
   build:
+    if: env.ENABLE_WORKFLOW == 'off'   # 🔒 Checks the switch before running
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
