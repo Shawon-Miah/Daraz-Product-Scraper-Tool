@@ -6,7 +6,7 @@
 
 Welcome! This is an automated web scraper that finds product data on **Daraz Bangladesh** 🇧🇩 and sends it to your web application.
 
-It's designed to be a **"set-it-and-forget-it"** tool. 😴 You can host it for **FREE** on GitHub, where it will run on a schedule, collect new product information, and send it wherever you want!
+It's designed to be a **"set-it-and-forget-it"** tool. 😴 You can host it for **FREE** on GitHub, where it will run on a schedule, collect new product information, and send it directly to your own Google Sheet!
 
 ## ✨ Key Features
 
@@ -22,98 +22,139 @@ It's designed to be a **"set-it-and-forget-it"** tool. 😴 You can host it for 
 -   **Scraping Libs:** Playwright & BeautifulSoup4
 -   **Automation:** GitHub Actions 🚀
 -   **Data Sending:** Requests
+-   **Data Receiver:** Google Apps Script
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Getting Started Guide
 
-You have two amazing options to use this scraper. The GitHub method is recommended for easy, automated, and free hosting.
+To get this scraper working, you need two parts: **Part A** is setting up the Google Sheet to receive the data, and **Part B** is setting up the GitHub Scraper to send the data.
 
-### **Method 1: Run on GitHub (Recommended & Automated) ☁️**
+### **Part A: Setting Up the Google Sheet Data Receiver 📝**
 
-This is the easiest way. It's fully automated and completely free.
+First, we need to create a special web app URL using Google Sheets that can listen for data from our scraper.
 
-#### **Step 1: Fork this Repository**
-Click the **"Fork"** button at the top-right of this page. This will create a complete copy of this project in your own GitHub account.
+1.  **Create a New Google Sheet**
+    -   Go to [sheets.google.com](https://sheets.google.com) and create a **Blank** spreadsheet.
+    -   Name it whatever you like (e.g., "Daraz Scraper Data").
+    -   **CRITICAL:** Rename the tab at the bottom from "Sheet1" to **`Products`**. The script needs this exact name to work.
 
-#### **Step 2: Add your Web App URL Secret**
-The scraper needs to know *where* to send the data it collects. You must provide this URL as a "secret" so it stays private.
+2.  **Open the Apps Script Editor**
+    -   In the menu, go to **Extensions** > **Apps Script**. A new tab will open.
 
-1.  In your new forked repository, go to **Settings** > **Secrets and variables** > **Actions**.
-2.  Click the **New repository secret** button.
-3.  **Name:** `WEB_APP_URL` (It must be exactly this!)
-4.  **Value / Secret:** Paste the URL of your web app (for example, a Google Apps Script `doPost` URL that adds data to a Google Sheet).
-5.  Click **Add secret**.
+3.  **Paste the Script Code**
+    -   Delete any placeholder code in the `Code.gs` window.
+    -   Copy and paste the entire JavaScript code block below:
+    ```javascript
+    // This function runs when your Python script SENDS data (POST request)
+    function doPost(e) {
+      try {
+        var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Products");
+        
+        // Header row with Image URL columns
+        if (sheet.getLastRow() === 0) {
+          var headers = [
+            'Timestamp', 'Product Title', 'Price', 'Discount', 'Product URL',
+            'Image URL 1', 'Image URL 2', 'Image URL 3', 'Image URL 4',
+            'Image URL 5', 'Image URL 6'
+          ];
+          sheet.appendRow(headers);
+        }
 
-> **⚠️ VERY IMPORTANT:** The scraper will not work without this secret! It is designed to check for it and will stop if it's not found.
+        var productData = JSON.parse(e.postData.contents);
+        
+        // Handle any number of images, filling up to 6 columns
+        var images = productData.image_urls || []; 
+        var imageCols = [];
+        for (var i = 0; i < 6; i++) {
+          imageCols.push(images[i] || ""); // Add the URL or an empty string
+        }
+        
+        var newRow = [
+          new Date(), productData.title, productData.price,
+          productData.discount, productData.product_url
+        ].concat(imageCols);
+        
+        sheet.appendRow(newRow);
+        return ContentService.createTextOutput(JSON.stringify({ "status": "success", "product": productData.title })).setMimeType(ContentService.MimeType.JSON);
+      } catch (error) {
+        return ContentService.createTextOutput(JSON.stringify({ "status": "error", "message": error.message })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
 
-#### **Step 3: Enable and Run the Automation!**
-1.  Go to the **Actions** tab in your repository.
-2.  If you see a button that says `I understand my workflows, go ahead and enable them`, click it.
-3.  That's it! The scraper will now run automatically on the schedule (currently every 20 mins between certain hours).
-4.  To run it immediately, click **"Run My Scraper"** on the left, then the **"Run workflow"** button.
-
-### **Method 2: Run on Your Local PC 💻**
-
-If you want to run the scraper on your own computer, follow these steps.
-
-#### **Step 1: Clone the Repository**
-```bash
-git clone https://github.com/Shawon-Miah/Daraz-Product-Scraper-Tool.git
-cd Daraz-Product-Scraper-Tool
-```
-
-#### **Step 2: Create a Virtual Environment (Highly Recommended)**
-This keeps your project's dependencies separate.
-```bash
-# For Windows
-python -m venv venv
-.\venv\Scripts\activate
-
-# For macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
-```
-
-#### **Step 3: Install All the Requirements**
-```bash
-pip install -r requirements.txt
-```
-
-#### **Step 4: Install the Necessary Browser for Playwright**
-```bash
-playwright install --with-deps chromium
-```
-
-#### **Step 5: Set the Environment Variable**
-This is the local version of adding a GitHub Secret.
-
--   **On Windows (Command Prompt):**
-    ```cmd
-    set WEB_APP_URL="YOUR_WEB_APP_URL_HERE"
+    // This function runs to check for duplicate products
+    function doGet(e) {
+      try {
+        var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Products");
+        if (sheet.getLastRow() < 2) {
+          return ContentService.createTextOutput(JSON.stringify({ "titles": [], "urls": [] })).setMimeType(ContentService.MimeType.JSON);
+        }
+        var range = sheet.getRange(2, 2, sheet.getLastRow() - 1, 4); 
+        var values = range.getValues();
+        var titles = [], urls = [];
+        for (var i = 0; i < values.length; i++) {
+          titles.push(values[i]);
+          urls.push(values[i]);
+        }
+        return ContentService.createTextOutput(JSON.stringify({ "titles": titles, "urls": urls })).setMimeType(ContentService.MimeType.JSON);
+      } catch (error) {
+         return ContentService.createTextOutput(JSON.stringify({ "status": "error", "message": error.message })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
     ```
--   **On macOS/Linux (Terminal):**
-    ```bash
-    export WEB_APP_URL="YOUR_WEB_APP_URL_HERE"
-    ```
-*(Replace `"YOUR_WEB_APP_URL_HERE"` with your actual URL)*
+    - Click the **Save project** 💾 icon.
 
-#### **Step 6: Run the Scraper!**
-```bash
-python src/scraper.py
-```
-You should now see the scraper starting in your terminal! 🎉
+4.  **🚀 Deploy the Script as a Web App**
+    -   Click the blue **Deploy** button > **New deployment**.
+    -   Click the Gear Icon ⚙️ and select **Web app**.
+    -   For **Who has access**, change it to **Anyone**. This is required for GitHub to be able to send it data.
+    -   Click **Deploy**.
+
+5.  **✅ Authorize the Script**
+    -   A popup will ask for permission. Click **Authorize access**.
+    -   Choose your Google account.
+    -   You will see a "Google hasn't verified this app" warning. This is normal. Click **Advanced**, then click **"Go to ... (unsafe)"**.
+    -   Click **Allow**.
+
+6.  **🔗 Get Your Web App URL**
+    -   A final popup will show your **Web app URL**.
+    -   **COPY THIS URL!** This is the magic link you'll need for the next part. Keep it safe.
+
+### **Part B: Setting Up the GitHub Scraper ☁️**
+
+Now we will set up the GitHub repository to do the scraping and send data to the URL you just created.
+
+1.  **Fork this Repository**
+    -   If you haven't already, click the **"Fork"** button at the top-right of this page.
+
+2.  **Add your Web App URL Secret**
+    -   In your forked repository, go to **Settings** > **Secrets and variables** > **Actions**.
+    -   Click **New repository secret**.
+    -   **Name:** `WEB_APP_URL`
+    -   **Value:** Paste the **Web app URL** you copied from Google Apps Script in the previous section.
+
+3.  **Enable and Run the Automation!**
+    -   Go to the **Actions** tab. Click `I understand my workflows, go ahead and enable them`.
+    -   The scraper will now run on its schedule. To run it immediately, click **"Run My Scraper"** on the left and then **"Run workflow"**. Check your Google Sheet in a few minutes! ✨
 
 ---
+
+## Running Locally on Your PC 💻
+
+If you prefer to run the scraper on your own computer instead of automatically on GitHub, you can follow these steps after completing Part A.
+
+1.  **Clone the Repo:** `git clone https://github.com/YOUR_USERNAME/Daraz-Product-Scraper-Tool.git`
+2.  **Navigate into it:** `cd Daraz-Product-Scraper-Tool`
+3.  **Setup Environment:** `python -m venv venv` then `.\venv\Scripts\activate` (for Windows).
+4.  **Install packages:** `pip install -r requirements.txt`
+5.  **Install browser:** `playwright install --with-deps chromium`
+6.  **Set Environment Variable (Windows):** `set WEB_APP_URL="YOUR_WEB_APP_URL_HERE"`
+7.  **Run!** `python src/scraper.py`
 
 ## 🔧 Customization
 
-Want to scrape for different things? It's easy! Open the `src/scraper.py` file and edit the configuration variables at the top:
-
--   `TARGET_PRODUCTS_PER_RUN`: How many new products to find each time.
--   `MAX_PAGES_TO_CHECK`: How many search pages to look through.
--   `SEARCH_URLS`: A big list of all the Daraz search queries. **Add, remove, or change these URLs to whatever you want!**
+You can easily change what the scraper looks for! Open the `src/scraper.py` file and edit the list called `SEARCH_URLS` at the top. Add or remove any Daraz search URLs you want.
 
 ## 📄 License
 
-This project is licensed under the MIT License. Feel free to use and modify it! See the [LICENSE](LICENSE) file for more details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
